@@ -20,3 +20,22 @@ Run `bash scripts/train_igsd.sh` from the repository root. The launcher calls
 `python3 -m verl.trainer.main_ppo` and requires `IGSD_MODEL_PATH`,
 `IGSD_TRAIN_DATA`, `IGSD_VAL_DATA`, `IGSD_OUTPUT_DIR`, and
 `IGSD_RETRIEVAL_URL` to be set for the local environment.
+
+## Minimal launch example
+
+With the dependencies installed and a compatible retriever already running
+locally at `http://127.0.0.1:8000/retrieve`, run from the repository root:
+
+```bash
+export IGSD_MODEL_PATH=/path/to/model
+export IGSD_TRAIN_DATA=/path/to/train.parquet
+export IGSD_VAL_DATA=/path/to/validation.parquet
+export IGSD_OUTPUT_DIR=/path/to/output
+export IGSD_RETRIEVAL_URL=http://127.0.0.1:8000/retrieve
+
+bash scripts/train_igsd.sh
+```
+
+Replace the placeholder paths with your local assets. For a different
+retrieval endpoint, also set `IGSD_TOOL_CONFIG` to a tool configuration YAML
+whose `retrieval_service_url` matches that endpoint.
