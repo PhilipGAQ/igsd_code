@@ -5,7 +5,7 @@
 - `scripts/train_igsd.sh`: IGSD training launcher and main configuration.
 - `examples/search_agent_rl/config/`: search-agent and tool configurations.
 - `examples/search_agent_rl/preprocess_search_r1_dataset.py`: data preprocessing.
-- `examples/search_agent_rl/local_dense_retriever/`: local retriever example.
+- `examples/search_agent_rl/local_dense_retriever/start_retrieval.sh`: local retriever launcher.
 - `verl/trainer/main_ppo.py`: veRL training entry point.
 - `verl/trainer/ppo/igsd_*.py`: IGSD training, verification, and distillation.
 - `verl/experimental/agent_loop/tool_agent_loop.py`: search-agent rollout loop.
@@ -23,8 +23,15 @@ Run `bash scripts/train_igsd.sh` from the repository root. The launcher calls
 
 ## Minimal launch example
 
-With the dependencies installed and a compatible retriever already running
-locally at `http://127.0.0.1:8000/retrieve`, run from the repository root:
+From the repository root, first prepare the retriever index and corpus as
+described in `examples/search_agent_rl/local_dense_retriever/README.md`.
+With the retriever dependencies installed, start the service in one terminal:
+
+```bash
+bash examples/search_agent_rl/local_dense_retriever/start_retrieval.sh
+```
+
+Keep the retriever running. In a second terminal, start training:
 
 ```bash
 export IGSD_MODEL_PATH=/path/to/model
@@ -38,4 +45,6 @@ bash scripts/train_igsd.sh
 
 Replace the placeholder paths with your local assets. For a different
 retrieval endpoint, also set `IGSD_TOOL_CONFIG` to a tool configuration YAML
-whose `retrieval_service_url` matches that endpoint.
+whose `retrieval_service_url` matches that endpoint. The default retriever and
+training launchers both expose multiple GPUs; allocate non-overlapping devices
+if they run on the same machine.
