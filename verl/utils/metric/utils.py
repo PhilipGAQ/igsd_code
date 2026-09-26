@@ -58,7 +58,7 @@ def reduce_metrics(metrics: dict[str, Union["Metric", list[Any]]]) -> dict[str, 
                 metrics[key] = np.mean(val)
         except ValueError as e:
             print(f"!!! Error on key '{key}' with value {val}")
-            raise e # 重新抛出异常，以免影响原有逻辑
+            raise e
     return metrics
 
 

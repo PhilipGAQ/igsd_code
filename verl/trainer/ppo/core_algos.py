@@ -341,10 +341,10 @@ def compute_grpo_vectorized_outcome_advantage(
     config: Optional[AlgoConfig] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Vectorized GRPO（outcome-only）:
+    Vectorized GRPO (outcome-only):
       For each group g:
       a_i = \\frac{r_i - \\mu_g}{\\sigma_g} (or without dividing by \\sigma_g),
-      then broadcast the scalar across the token dimension (multiplied by response_mask).。
+      then broadcast the scalar across the token dimension (multiplied by response_mask).
     """
     with torch.no_grad():
         scores = token_level_rewards.sum(dim=-1)

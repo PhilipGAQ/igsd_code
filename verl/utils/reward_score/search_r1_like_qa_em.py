@@ -23,15 +23,15 @@ import string
 
 def is_valid_sequence(text):
     """
-    检查轨迹是否符合特定的 ReAct/Tool-use 格式：
-    1. 必须以 <thought> 开始
-    2. <thought> 后接 <tool_call> 或 <answer>
-    3. <tool_call> 后必须接 <tool_response>
-    4. <tool_response> 后必须重新回到 <thought>
-    5. 以 <answer>...</answer> 结束
+    Check that a trajectory follows the expected ReAct/tool-use format:
+    1. Start with <thought>.
+    2. Follow a thought with <tool_call> or <answer>.
+    3. Follow a tool call with <tool_response>.
+    4. Resume thinking after each tool response.
+    5. Finish with <answer>...</answer>.
     """
 
-    # 1. 基础标签完整性检查 (Balanced Tags Check)
+    # 1. Check balanced tags.
     tags_to_check = ["thought", "tool_call", "tool_response", "answer"]
     for tag in tags_to_check:
         opening_count = len(re.findall(f"<{tag}>", text))
@@ -39,13 +39,11 @@ def is_valid_sequence(text):
         if opening_count != closing_count:
             return False, f"Mismatch in {tag} tags: {opening_count} opening vs {closing_count} closing tags"
 
-    # 2. 使用正则表达式切分文本，提取所有标签
-    # 模式匹配：<tag> 或 </tag>
+    # 2. Split the text into content and opening/closing tags.
     split_pattern = r"(</?(?:thought|tool_call|tool_response|answer)>)"
     parts = re.split(split_pattern, text)
 
-    # 3. 状态机校验 (State Machine)
-    # 初始状态：必须开始思考
+    # 3. Validate the sequence with a state machine.
     state = "expect_thought"
 
     for part in parts:
@@ -53,27 +51,27 @@ def is_valid_sequence(text):
         if not part:
             continue
 
-        # 检查当前部分是否是一个标签
+        # Check whether this part is a tag.
         if re.match(r"^</?(?:thought|tool_call|tool_response|answer)>$", part):
             tag = part
 
-            # --- 状态转移逻辑 ---
+            # --- State transitions ---
 
-            # 状态：等待思考 (初始状态 或 工具返回后)
+            # Expect a thought at the start or after a tool response.
             if state == "expect_thought":
                 if tag == "<thought>":
                     state = "in_thought"
                 else:
                     return False, f"Expected <thought> at start or after tool response, but found {tag}"
 
-            # 状态：正在思考中
+            # Inside a thought.
             elif state == "in_thought":
                 if tag == "</thought>":
                     state = "after_thought"
                 else:
                     return False, f"Inside <thought>, expected </thought> but found {tag}"
 
-            # 状态：思考结束 (分支点：决定调用工具还是回答)
+            # After a thought, either call a tool or answer.
             elif state == "after_thought":
                 if tag == "<tool_call>":
                     state = "in_tool_call"
@@ -82,46 +80,44 @@ def is_valid_sequence(text):
                 else:
                     return False, f"After </thought>, expected <tool_call> or <answer>, but found {tag}"
 
-            # 状态：正在调用工具
+            # Inside a tool call.
             elif state == "in_tool_call":
                 if tag == "</tool_call>":
                     state = "after_tool_call"
                 else:
                     return False, f"Inside <tool_call>, expected </tool_call> but found {tag}"
 
-            # 状态：工具调用结束 (必须等待工具回复)
+            # Wait for the tool response.
             elif state == "after_tool_call":
                 if tag == "<tool_response>":
                     state = "in_tool_response"
                 else:
                     return False, f"After </tool_call>, expected <tool_response>, but found {tag}"
 
-            # 状态：正在接收工具回复
+            # Inside a tool response.
             elif state == "in_tool_response":
                 if tag == "</tool_response>":
-                    # 关键规则：每次得到新的工具回复之后，必须先思考
+                    # A tool response must be followed by another thought.
                     state = "expect_thought"
                 else:
                     return False, f"Inside <tool_response>, expected </tool_response> but found {tag}"
 
-            # 状态：正在回答
+            # Inside the final answer.
             elif state == "in_answer":
                 if tag == "</answer>":
                     state = "end"
                 else:
                     return False, f"Inside <answer>, expected </answer> but found {tag}"
 
-            # 状态：流程已结束
+            # The sequence has ended.
             elif state == "end":
                 return False, f"Found extra tag {tag} after sequence ended"
 
         else:
-            # 非标签内容 (Content)
-            # 在这里我们不对标签外的内容做严格限制 (例如 user/assistant 标记)
-            # 只要它们不包含破坏结构的伪标签即可
+            # Free text outside tags has no additional constraints here.
             pass
 
-    # 4. 检查最终状态
+    # 4. Require a complete final answer.
     if state != "end":
         return False, f"Incomplete sequence, ended in state: {state}"
 

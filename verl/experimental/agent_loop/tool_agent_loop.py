@@ -162,8 +162,7 @@ class AgentData:
         self.tool_turns = 0
         self.all_call_tool_counts = 0
         self.all_call_tool_success_counts = 0
-        #异常轨迹监督
-        #重复query数量
+        # Track anomalous trajectories and repeated queries.
         self.abnormal_trajectory_dic = {}
         self.abnormal_trajectory_dic['searched_query_count'] = 0
         self.abnormal_trajectory_dic['tool_parser_error_count'] = 0
@@ -180,9 +179,9 @@ class AgentData:
 
         self.routed_experts = None
 
-        #维护搜索过的query
+        # Track previously searched queries.
         self.searched_query = set()
-        #维护搜索结果签名，用于过滤换词但返回内容高度重合的搜索
+        # Detect rewritten queries that retrieve substantially overlapping results.
         self.searched_result_signatures: list[set[str]] = []
         # Extra fields for dynamic addition, e.g., tool session data
         self.extra_fields: dict[str, Any] = {}
@@ -632,8 +631,7 @@ class ToolAgentLoop(AgentLoopBase):
                 except Exception as e:
                     print(f"[tool_response_text parser Error] {e}")
                     tool_response_text_lst = []
-                # 修复逻辑：处理长度不一致的情况
-                # 如果 split 后的数量和 query 数量对不上，记录日志并尽量匹配
+                # Report mismatched query/result counts; zip uses the shorter list.
                 if len(tool_response_text_lst) != len(query_list):
                     print(
                         f"Mismatch in summarization: queries={len(query_list)}, "
@@ -795,7 +793,7 @@ class ToolAgentLoop(AgentLoopBase):
             if tool and instance_id:
                 await tool.release(instance_id)
 
-        tool_response_text = tool_execution_response.text or "" # 确保非 None
+        tool_response_text = tool_execution_response.text or ""  # Normalize None to an empty string.
         tool_response_kwargs = {"text": tool_response_text}
         # Add multimedia data if present
         for attr_name in ["image", "video"]:
@@ -918,7 +916,7 @@ class ToolAgentLoop(AgentLoopBase):
         summary_prompt = PROMPT_TEMPLATE.format(query=query, documents=document)
         new_messages = [{"role": "user", "content": summary_prompt or ""}]
 
-        # 使用本地变量避免并发冲突
+        # Keep this prompt local to avoid concurrent-state conflicts.
         tool_response_prompt_ids = await self.apply_chat_template(
             new_messages,
             images=None,

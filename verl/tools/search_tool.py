@@ -101,7 +101,7 @@ def perform_search_remote(
         ray.get(rate_limiter.acquire.remote())
 
     result_text = ""
-    # 初始化 Metadata，默认 error_code 为 0 (假设失败/无结果)
+    # Initialize metadata with the failure/no-results status.
     metadata = {
         "query_count": len(query_list),
         "status": "initializing",
@@ -147,14 +147,14 @@ def perform_search_remote(
             formatted_chunks = []
             total_count = 0
 
-            # 解析结果
+            # Parse results.
             try:
                 for single_query_result in raw_results:
                     formatted_str = _format_passages(single_query_result)
                     formatted_chunks.append(formatted_str)
                     total_count += len(single_query_result) if isinstance(single_query_result, list) else 1
             except Exception as parse_e:
-                # 解析过程出错
+                # Parsing failed.
                 error_msg = f"Result parsing failed: {str(parse_e)}"
                 result_text = json.dumps({"result": error_msg}, ensure_ascii=False)
                 metadata["status"] = "parsing_error"
@@ -163,18 +163,18 @@ def perform_search_remote(
                 return result_text, metadata
 
             if total_count > 0:
-                # 成功且有结果
+                # Successful retrieval with results.
                 result_text = json.dumps({"result": "\n-*-*-\n".join(formatted_chunks)}, ensure_ascii=False)
                 metadata["status"] = "success"
                 metadata["total_results"] = total_count
-                metadata["error_code"] = 1 # 成功标记
+                metadata["error_code"] = 1  # Results found.
             else:
-                # 成功但无结果
+                # Request succeeded without results.
                 result_text = json.dumps({"result": "No search results found."}, ensure_ascii=False)
                 metadata["status"] = "no_results"
-                metadata["error_code"] = 0 # 无结果视为 0
+                metadata["error_code"] = 0  # No results.
         else:
-            # 重试后依然失败
+            # All retries failed.
             error_msg = f"Search failed after {MAX_RETRIES} retries. Last error: {last_error}"
             logger.warning(f"[SearchTool] {error_msg}")
             result_text = json.dumps({"result": error_msg}, ensure_ascii=False)
@@ -189,7 +189,7 @@ def perform_search_remote(
                 metadata["status"] = "request_failed"
 
     except Exception as e:
-        # 意外的执行错误
+        # Unexpected execution error.
         error_msg = f"Unexpected execution error: {str(e)}"
         logger.error(f"[SearchTool] {error_msg}")
         result_text = json.dumps({"result": error_msg}, ensure_ascii=False)
@@ -269,7 +269,7 @@ class SearchTool(BaseTool):
         """
         query_list = parameters.get("query_list")
         query_list_len = len(query_list)
-        # Basic Validation: 参数缺失也是一种错误
+        # Missing parameters are invalid.
         if not query_list or not isinstance(query_list, list):
             msg = "Error: 'query_list' parameter is missing or not a list."
             error_metadata = {
@@ -301,7 +301,7 @@ class SearchTool(BaseTool):
             return ToolResponse(text=result_text), 0.0, metadata
 
         except Exception as e:
-            # 捕获本地执行或 Ray 调用过程中的异常
+            # Catch local execution and Ray invocation errors.
             err_msg = f"Search execution exception: {str(e)}"
             logger.error(err_msg)
             error_metadata = {

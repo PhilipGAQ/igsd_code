@@ -37,7 +37,8 @@ It is retained for fidelity to the original main training configuration.
   `prompt`, `reward_model.ground_truth`, and `extra_info.tools_kwargs` fields.
   The included [preprocessor](examples/search_agent_rl/preprocess_search_r1_dataset.py)
   shows the expected schema; review its source dataset and validation split
-  before applying it to new data.
+  before applying it to new data. It requires an explicit `--local_dir` for
+  output rather than choosing a home-directory destination automatically.
 - A compatible local E5 retriever over the December 2018 Wikipedia corpus,
   exposing POST `/retrieve` and the `queries`/`topk` request schema. The
   [retriever example](examples/search_agent_rl/local_dense_retriever/README.md)
@@ -83,3 +84,10 @@ The underlying veRL trainer retains compatibility code for optional
 algorithms and historical auxiliary objectives; only the main IGSD
 configuration is exposed by the launcher. Those inactive compatibility paths
 are not part of the method described above.
+
+Upstream veRL reference configs still contain illustrative `~/models/...` and
+`~/data/...` defaults; the IGSD launcher overrides them with the required
+model and dataset environment variables. Repository-relative Hydra imports,
+retriever example paths, and generic framework cache/`/tmp` paths are retained
+because they are not machine-specific paths. No private model, dataset, or
+cluster location is configured by this release.

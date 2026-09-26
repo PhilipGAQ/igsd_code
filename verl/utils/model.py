@@ -77,9 +77,9 @@ def update_model_config(module_config, override_config_kwargs):
         override_config_kwargs: The kwargs to override the module config.
     """
     for key, val in override_config_kwargs.items():
-        print(f"Processing key: {key}") # 加上这句
+        print(f"Processing key: {key}")
         if not hasattr(module_config, key):
-            print(f"WARNING: original config does not have key: {key}") # 加上这句
+            print(f"WARNING: original config does not have key: {key}")
 
         if isinstance(val, dict):
             update_model_config(getattr(module_config, key), val)

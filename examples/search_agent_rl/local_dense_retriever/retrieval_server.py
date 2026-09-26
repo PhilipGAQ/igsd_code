@@ -343,7 +343,7 @@ def retrieve_endpoint(request: QueryRequest):
       "return_scores": true
     }
 
-    Output format (when return_scores=True，similarity scores are returned):
+    Output format (when return_scores=True, similarity scores are returned):
     {
         "result": [
             [   # Results for each query
