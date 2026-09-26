@@ -1,0 +1,603 @@
+# Format checks enforced on CI:
+# 1. Comments must appear above each field.
+# 2. There must be a blank line between each field.
+# 3. Inline comments (after a field on the same line) are not allowed.
+# 4. Indentation level is respected for nested fields.
+
+# specify the default per-component configs
+defaults:
+
+  - model_engine: dp
+
+  # <folder_name>@<field_name>.<field_name>: <yaml_file_name>
+  # actor_rollout_ref.actor: trainer/config/actor/dp_actor.yaml
+  - actor@actor_rollout_ref.actor: ${model_engine}_actor
+
+  # data: trainer/config/data/legacy_data.yaml
+  - data@data: legacy_data
+
+  # Reference model config.
+  # Reference model will be enabled when actor.use_kl_loss or/and algorithm.use_kl_in_reward is/are True.
+  - ref@actor_rollout_ref.ref: ${model_engine}_ref
+
+  # Rollout model config.
+  - rollout@actor_rollout_ref.rollout: rollout
+
+  # Model config.
+  - model@actor_rollout_ref.model: hf_model
+
+  # Critic model config.
+  - critic@critic: ${model_engine}_critic
+  - model@critic.model: hf_model
+
+  # legacy reward impl config, for backward compatibility
+  - legacy_reward_impl
+
+  # Reward config.
+  - reward@reward: reward
+
+  # Rollout correction config.
+  - algorithm@algorithm.rollout_correction: rollout_correction
+
+  # distillation config
+  - distillation@distillation: distillation
+
+  # load the reference default config, then apply the fields in the current yaml
+  # self config override anything above
+  - _self_
+
+# config for actor, rollout and reference model
+actor_rollout_ref:
+
+  # Whether it's a hybrid engine, currently only supports hybrid engine
+  hybrid_engine: true
+
+  # Timeout for operations executed against the process group
+  nccl_timeout: 600
+
+# config for the algorithm
+algorithm:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl.trainer.config.AlgoConfig
+
+  # Discount factor for future rewards
+  gamma: 1.0
+
+  # Trade-off between bias and variance in the GAE estimator
+  lam: 1.0
+
+  # Advantage estimator type: "gae", "grpo", "reinforce_plus_plus", etc.
+  adv_estimator: gae
+
+  # Whether to normalize advantages by std (specific to GRPO)
+  norm_adv_by_std_in_grpo: True
+
+  # Whether to enable in-reward KL penalty
+  use_kl_in_reward: False
+
+  # How to estimate KL divergence: "kl", "abs", "mse", "low_var_kl", or "full"
+  kl_penalty: kl
+
+  # KL control configuration
+  kl_ctrl:
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl.trainer.config.KLControlConfig
+
+    # KL control type: "fixed" or "adaptive"
+    type: fixed
+
+    # Initial coefficient for KL penalty
+    kl_coef: 0.001
+
+    # Horizon value for adaptive controller (if enabled)
+    horizon: 10000
+
+    # Target KL divergence (used for adaptive controller)
+    target_kl: 0.1
+
+  # Whether to enable preference feedback PPO
+  use_pf_ppo: False
+
+  # Preference feedback PPO settings
+  pf_ppo:
+
+    # Method for reweighting samples: "pow", "max_min", or "max_random"
+    reweight_method: pow
+
+    # Power used for weight scaling in "pow" method
+    weight_pow: 2.0
+
+  # Whether to add IG-Search style information-gain reward to search-query turns.
+  enable_ig_reward: False
+
+  # Whether to enable IG-gated self-distillation.
+  enable_igsd: False
+
+  # IGSD distillation mode. "reverse_kl" is the legacy target-token Bernoulli
+  # event KL; "event_reverse_kl" is its explicit alias. "topk_reverse_kl" and
+  # "topk_jsd" operate on the de-duplicated union of teacher/student top-k
+  # supports. topk_jsd matches the bounded categorical objective in SD-Search.
+  # "candidate_pair_jsd" restricts JSD to one verified teacher/sample pair;
+  # it requires igsd_distill_topk=2 because the support width is fixed.
+  igsd_distill_mode: bc
+
+  # Distillation target. "teacher_action" preserves historical IGSD and learns
+  # the generated replacement q_T. "student_on_policy" evaluates distributions
+  # along the exact sampled q_S action. Depending on token_weight_mode, q_T can
+  # supply a row verifier or a local candidate and its pair probabilities.
+  igsd_distill_target: teacher_action
+
+  # Per-side top-k width for categorical top-k losses. The union has at most
+  # 2 * topk entries. Default 50 matches SD-Search.
+  igsd_distill_topk: 50
+
+  # Maximum active positions materialized as float32 full-vocabulary target
+  # logits at once. Zero restores the unchunked path.
+  igsd_topk_materialization_chunk_size: 512
+
+  # Inference-only action-prefilter optimization for supported causal LMs.
+  # When enabled, the LM head projects only selected query-token positions
+  # instead of first materializing full-sequence vocabulary logits.
+  igsd_prefilter_selective_lm_head: False
+
+  # Reverse-KL tail diagnostics. Disabled by default and never changes the loss.
+  igsd_rkl_diagnostics_enabled: False
+
+  # Event-KL log-probability floor. -30 preserves historical behavior. The
+  # legacy float32 probability clamp also imposes an effective floor near
+  # log(eps)=-15.94; only values above that change the event-level KL loss.
+  igsd_rkl_floor_log_prob: -30.0
+
+  # Teacher-side low log-probability threshold used only for diagnostics.
+  igsd_rkl_teacher_low_threshold: -10.0
+
+  # Student-side high log-probability threshold used only for diagnostics.
+  igsd_rkl_student_high_threshold: -5.0
+
+  # IGSD distillation span. "full_tool_call" distills the complete canonical
+  # search tool call; "query_only" keeps the same target sequence but applies
+  # loss only to the serialized query string tokens.
+  igsd_distill_span: full_tool_call
+
+  # Whether to log turn-level search-action and query-only entropy diagnostics for IGSD.
+  # This decodes/parses rollouts once per training step, so keep it off unless needed.
+  igsd_log_entropy_metrics: False
+
+  # IGSD gate mode: "sigmoid", "positive_sigmoid", "hard", "none", or "lcb_sigmoid".
+  # positive_sigmoid zeroes signals at or below the margin while retaining
+  # sigmoid weighting above it. lcb_sigmoid is available only for paired M2
+  # hindsight_rollout IG.
+  igsd_gate_mode: sigmoid
+
+  # Row verification path. "paired" generates and verifies a replacement
+  # teacher query. "bypass" retains only the privileged teacher context and
+  # scores the student-sampled query without a row-level verifier.
+  igsd_row_verification_mode: paired
+
+  # Row gate signal. "paired_ig" preserves environment-verified IGSD.
+  # "action_likelihood_gap" keeps the paired candidate set but replaces the
+  # weight with the detached teacher-student mean log-probability gap over
+  # canonical query-value tokens.
+  igsd_gate_source: paired_ig
+
+  # Temperature for the sigmoid transform of the selected gate signal.
+  igsd_beta: 5.0
+
+  # Final/constant margin subtracted from the gate signal.
+  igsd_gate_margin: 0.0
+
+  # Margin schedule. "constant" always uses igsd_gate_margin. "early" uses
+  # igsd_gate_margin_initial for the first igsd_gate_margin_schedule_steps
+  # optimizer steps, then switches to igsd_gate_margin. "linear" interpolates
+  # from the initial margin at step 1 to the final margin at the configured step.
+  igsd_gate_margin_schedule: constant
+
+  # Margin used during the early schedule window.
+  igsd_gate_margin_initial: 0.0
+
+  # Schedule horizon for "early" or "linear".
+  igsd_gate_margin_schedule_steps: 0
+
+  # LCB uncertainty penalty: delta_lcb = mean(delta_cf) - kappa * SE(delta_cf).
+  igsd_lcb_kappa: 1.0
+
+  # Minimum number of paired counterfactual controls required to open an LCB gate.
+  igsd_lcb_min_counterfactuals: 3
+
+  # Coefficient for IGSD distillation loss.
+  igsd_lambda: 0.1
+
+  # Coefficient for IG reward modulation.
+  igsd_alpha: 0.1
+
+  # Number of initial optimizer steps before distillation gate behavior changes.
+  igsd_warmup_steps: 0
+
+  # Warmup mode: "disable_distill", "ungated", or "beta_ramp".
+  igsd_warmup_mode: disable_distill
+
+  # Token weighting mode inside a selected teacher query. "uniform" preserves
+  # the legacy path; "prefix_intervention_ig" enables G1 exact-prefix greedy
+  # teacher branches and adjacent-IG token gates. "budgeted_local_candidate_ig"
+  # uses teacher/student agreement plus the teacher top-1/top-2 margin to
+  # allocate at most one candidate branch per query-value token.
+  # "sampled_action_pair_ig" verifies a teacher-top1/sampled-token pair through
+  # atomically matched greedy student continuations.
+  igsd_token_weight_mode: uniform
+
+  # Temperature for entropy-based token weights.
+  igsd_token_weight_gamma: 1.0
+
+  # Token gate mode: "sigmoid", "rectified_sigmoid", "hard", or "none";
+  # independent from the turn-level igsd_gate_mode.
+  igsd_token_gate_mode: sigmoid
+
+  # Sigmoid slope for the signed adjacent-branch IG gain.
+  igsd_token_gate_beta: 5.0
+
+  # Margin subtracted from signed adjacent-branch IG before token gating.
+  igsd_token_gate_margin: 0.0
+
+  # Token gate normalization: "row_mean" keeps mean-one weights inside each
+  # query; "none" preserves raw per-token gates as absolute multipliers.
+  igsd_token_gate_normalization: row_mean
+
+  # Fallback weight when token-level delta IG cannot be computed. 0 preserves
+  # legacy exclusion; 1 falls back to ordinary OPD for that token.
+  igsd_token_invalid_fallback_weight: 0.0
+
+  # Keep all-zero token-gate queries in the OPD row denominator.
+  igsd_preserve_zero_token_gate_rows: False
+
+  # 0 uses rollout.response_length; positive values cap each greedy branch.
+  igsd_token_intervention_max_new_tokens: 0
+
+  # Maximum concurrent exact-prefix requests per rollout worker; 0 is unlimited.
+  igsd_token_intervention_max_concurrency: 0
+
+  # Budgeted local-candidate settings. Candidate branches are capped at
+  # floor(ratio * query-value-token-count); the default therefore never exceeds
+  # the query token count. The ambiguity margin is in teacher log-probability
+  # space. Confirmation applies a SDAR-style teacher/student sampled-token gap.
+  igsd_budgeted_candidate_budget_ratio: 1.0
+  igsd_budgeted_ambiguity_log_margin: 0.5
+  # soft: both signs receive asymmetric sigmoid calibration;
+  # positive_only: adjusted gap <= 0 receives zero weight;
+  # none: disable consensus calibration, retain verified corrections.
+  igsd_budgeted_confirmation_mode: soft
+  igsd_budgeted_confirmation_beta: 5.0
+  igsd_budgeted_confirmation_margin: 0.0
+  # Preserve teacher top-1/top-2 mass while tilting their relative weights by
+  # exp(eta * environment_utility) when both candidates are evaluated.
+  igsd_budgeted_target_eta: 1.0
+
+  # Sampled-action pair budget, measured in logical pair sides. Each verified
+  # token consumes two units; fixed-S can share one physical terminal reference
+  # while retaining this selection budget.
+  igsd_sampled_pair_budget_ratio: 1.0
+
+  # Numerical tolerance for excluding an indistinguishable teacher/student pair.
+  igsd_sampled_pair_log_odds_epsilon: 1.0e-6
+
+  # Sampled-action pair reference: "greedy_pair" keeps a matched continuation
+  # after the sampled token; "fixed_s" reuses the original sampled query as a
+  # shared terminal reference for all selected teacher candidates.
+  igsd_sampled_pair_reference_mode: greedy_pair
+
+  # Pair gate signal. environment_ig runs matched student continuations and
+  # retrieval verification; likelihood_gap and constant are no-environment
+  # controls over the same routed candidate pairs.
+  igsd_sampled_pair_gate_source: environment_ig
+
+  # Gate granularity: token applies the environment Delta-IG independently;
+  # query_mean computes one signed mean over routed/valid positions and shares
+  # the resulting gate within that query.
+  igsd_sampled_pair_gate_granularity: token
+
+  # Offline diagnostic only. When true, all eligible pairs are materialized
+  # and budget ratios up to 2 are accepted. Keep false for training.
+  igsd_sampled_pair_audit_all_eligible: False
+
+  # Pair reference candidate: sampled_action uses the unprivileged sampled
+  # action; student_top1 uses the unprivileged student modal action.
+  igsd_sampled_pair_candidate_mode: sampled_action
+
+  # Privileged teacher sees successful sibling queries and score, never GT/docs/full trace.
+  igsd_teacher_context_mode: success_queries_score
+
+  # Teacher prefix selection: "last_search" preserves the legacy path;
+  # "all_search" selects multiple turns from one failed trajectory per prompt.
+  igsd_teacher_turn_selection: last_search
+
+  # Max teacher-query turns per prompt. -1 means no cap. For all_search, capped
+  # turns are spread across the trajectory so early/middle/late states remain visible.
+  igsd_max_teacher_turns_per_prompt: -1
+
+  # Turn supervision routing: "independent" preserves each raw gate,
+  # "prompt_normalized" balances distillation across prompts, and
+  # "top1_positive" keeps only the largest positive delta-IG turn per trajectory.
+  igsd_turn_routing_mode: independent
+
+  # Number of random-document counterfactual samples for IG.
+  igsd_num_counterfactual_docs: 3
+
+  # Source of random counterfactual documents.
+  igsd_random_doc_source: batch
+
+  # Whether to detach gate values from gradients.
+  igsd_detach_gate: True
+
+  # Number of IGSD examples to log per step.
+  igsd_log_examples: 0
+
+  # Provider for teacher-query and IG tensors. "none" runs metrics-only scaffolding.
+  igsd_provider: none
+
+  # Whether to raise when IGSD is enabled but provider tensors are missing.
+  igsd_fail_on_missing_provider: False
+
+  # URL for retrieval service (needed for teacher IG computation).
+  igsd_retrieval_url: ""
+
+  # Top-k documents to retrieve for IG computation.
+  igsd_retrieval_topk: 3
+
+  # Max tokens for ground-truth answer span in model-based IG.
+  igsd_max_answer_tokens: 128
+
+  # Format used when evaluating GT-answer log probability.
+  igsd_answer_template: "\n<answer>{answer}</answer>"
+
+  # Maximum answer aliases; paired IG takes the best log-prob across aliases.
+  igsd_max_gt_aliases: 3
+
+  # Number of counterfactual doc replacements for model-based IG.
+  igsd_num_counterfactual: 3
+
+  # Maximum pseudo sequences per actor forward call.
+  igsd_max_pseudo_batch: 256
+
+  # Maximum total tokens of one paired-IG pseudo sequence; 0 disables filtering.
+  igsd_max_pseudo_seq_len: 0
+
+  # Enable IG computation (structural heuristic).
+  igsd_enable_ig_compute: False
+
+  # Enable model-based IG forward pass (requires actor forward passes).
+  igsd_enable_ig_forward: False
+
+  # Require ASearcher-style search arguments to be a list of strings.
+  igsd_strict_query_schema: False
+
+# config for the trainer
+trainer:
+
+  # Whether to balance batch sizes across distributed workers
+  balance_batch: True
+
+  # Number of epochs in training
+  total_epochs: 30
+
+  # Total training steps (can be set explicitly or derived from epochs)
+  total_training_steps: null
+
+  # Project name for experiment tracking (e.g., wandb)
+  project_name: verl_examples
+
+  # Experiment name for run identification in tracking tools
+  experiment_name: gsm8k
+
+  # Logging backends to use: "console", "wandb", etc.
+  logger: ["console", "wandb"]
+
+  # Number of generations to log during validation
+  log_val_generations: 0
+
+  # Directory for logging rollout data; no dump if null
+  rollout_data_dir: null
+
+  # Directory for logging validation data; no dump if null
+  validation_data_dir: null
+
+  # Number of nodes used in the training
+  nnodes: 1
+
+  # Number of GPUs per node
+  n_gpus_per_node: 8
+
+  # Save frequency (by iteration) for model checkpoints
+  save_freq: -1
+
+  # ESI refers to the elastic server instance used during training, similar to the training plan. For example,
+  # if you purchase 10 hours of computing power, the ESI will automatically shut down after 10 hours of training.
+  # To ensure a checkpoint is saved before ESI shuts down, the system will start saving a checkpoint in advance.
+  # The advance time is calculated as: Advance Time = Longest historical step duration + Checkpoint save duration + esi_redundant_time.
+  # Here, esi_redundant_time is a user-defined value that further extends the advance time for added safety.
+  esi_redundant_time: 0
+
+  # Resume mode: "auto", "disable", or "resume_path"
+  # "auto": resume from last checkpoint if available
+  # "disable": start from scratch
+  # "resume_path": resume from a user-defined path
+  resume_mode: auto
+
+  # Path to resume training from (only used when resume_mode is "resume_path")
+  resume_from_path: null
+
+  # Whether to run validation before training begins
+  val_before_train: True
+
+  # Whether to run validation only
+  val_only: False
+
+  # Validation frequency (in training iterations)
+  test_freq: -1
+
+  # Number of iterations to warm up the critic before updating policy
+  critic_warmup: 0
+
+  # Default path to distributed filesystem for saving checkpoints
+  default_hdfs_dir: null
+
+  # Whether to delete local checkpoints after loading
+  del_local_ckpt_after_load: False
+
+  # Default local directory for saving checkpoints
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+
+  # Maximum number of actor checkpoints to keep
+  max_actor_ckpt_to_keep: null
+
+  # Maximum number of critic checkpoints to keep
+  max_critic_ckpt_to_keep: null
+
+  # Timeout (in seconds) for Ray worker to wait for registration
+  ray_wait_register_center_timeout: 300
+
+  # Device to run training on (e.g., "cuda", "cpu")
+  device: cuda
+
+# profiler configs
+global_profiler:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl.utils.profiler.ProfilerConfig
+
+  # Profiling tool: choose between nsys, npu, torch, torch_memory, precision_debugger
+  tool: null
+
+  # profile steps
+  steps: null
+
+  # Whether to combine continuous steps into one database.
+  ## If True, worker.profiler.discrete must be False, [1,2] in one, [5] in another.
+  ## If False, [1] in one, [2] in another, [5] in another.
+  profile_continuous_steps: False
+
+  # Path to save profiling contents
+  save_path: "outputs/profile"
+
+  # Specific tool configs, can use +profiler.tool_config.[tool].xxx to config
+  global_tool_config:
+
+    # nsys config
+    nsys:
+
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl.utils.profiler.config.NsightToolConfig
+
+      # True for each task has its own database, False for all tasks in one training step share one database.
+      discrete: False
+
+      # controller Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      ## reference https://docs.nvidia.com/nsight-systems/UserGuide/index.html
+      ## reference https://docs.ray.io/en/latest/ray-observability/user-guides/profiling.html
+      controller_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+      # worker Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      worker_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+        # Profiling only in a range of torch.cuda.profiler.start and stop. Do not change this config.
+        capture-range: "cudaProfilerApi"
+
+        # Specify the desired behavior when a capture range ends.
+        # In verl we need the torch.cuda.profiler.start/stop pair to repeats n times.
+        # valid values are "repeat-shutdown:n" or null.
+        # For normal whole step profiling, n = len(profile_steps);
+        # but for discrete profiling, n = len(profile_steps) * Number(subtasks).
+        # Or you can just leave it null and the program will use n = len(profile_steps) * 6;
+        capture-range-end: null
+
+        # Send signal to the target application's process group. We let the program to exit by itself.
+        kill: none
+
+    # enable memory visualization for debugging memory usage
+    torch_memory:
+
+      #  Maximum number of allocation entries to record
+      trace_alloc_max_entries: 100_000
+
+      # The depth of the call stack to capture for each allocation
+      stack_depth: 32
+
+      # 'alloc': records only allocation events || 'state': records memory state changes || 'all': records both.
+      context: "all"
+
+      # 'python': records Python stacks || 'cpp': records C++ stacks (available in some versions) || 'all': records both.
+      stacks: "all"
+
+      # devices, record_context etc.
+      kw_args: {}
+
+    # msprobe precision debugger
+    precision_debugger:
+
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl.utils.profiler.config.PrecisionDebuggerToolConfig
+
+      # Path to msprobe config json
+      config_path: null
+
+      # Deprecated and ignored. Use global_profiler.steps.
+      steps: null
+
+      # Profile stages
+      # Supported stages: actor_update, actor_compute_log_prob, ref_compute_log_prob,
+      # compute_values, critic_update, compute_rm_score
+      stages: null
+
+      # Whether to fail on unknown stage or missing msprobe
+      strict: False
+
+# configs for TransferQueue
+transfer_queue:
+
+  # Whether to enable TransferQueue
+  enable: False
+
+  # Pluggable storage/transport backend of TransferQueue
+  backend:
+
+    # SimpleStorage with ZeroMQ
+    storage_backend: SimpleStorage
+
+    # Backend specific configs
+    SimpleStorage:
+      
+        # Maximum number of samples to hold
+        total_storage_size: 100000
+
+        # Number of distributed storage units
+        num_data_storage_units: 8
+
+# configs related to ray
+ray_kwargs:
+
+  # configs related to ray initialization
+  ray_init:
+
+    # Number of CPUs for Ray. Use a fixed number instead of null when using SLURM.
+    num_cpus: null
+
+  # Path to save Ray timeline JSON for performance profiling
+  timeline_json_file: null
